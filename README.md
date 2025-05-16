@@ -55,11 +55,3 @@ Check out the `examples` directory for complete working examples:
 ## Requirements
 
 - Python 3.12+
-
-## License
-
-MIT License
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
