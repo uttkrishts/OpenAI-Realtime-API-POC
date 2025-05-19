@@ -5,6 +5,7 @@ Handles audio data format conversion and encoding/decoding.
 
 import base64
 import logging
+import audioop
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -48,6 +49,39 @@ class Float32AudioProcessor(AudioProcessor):
         audio_data = np.frombuffer(raw_bytes, dtype=np.int16)
         # Convert to float32 in range [-1, 1]
         audio_data = audio_data.astype(np.float32) / 32767.0
+        return audio_data
+
+
+class G711uLawAudioProcessor(AudioProcessor):
+    """Processor for G.711 µ-law audio data."""
+
+    def encode(self, audio_data: np.ndarray) -> str:
+        """
+        Encode float32 audio data to G.711 μ-law base64 string.
+        Converts float32 to int16 PCM, then to μ-law.
+        """
+        # Convert float32 audio data to int16 PCM
+        clipped = np.clip(audio_data, -1.0, 1.0)
+        pcm16 = (clipped * 32767).astype(np.int16)
+        pcm16_bytes = pcm16.tobytes()
+        # Convert PCM16 to G.711 uLaw bytes
+        ulaw_bytes = audioop.lin2ulaw(pcm16_bytes, 2)
+        encoded = base64.b64encode(ulaw_bytes).decode("ascii")
+        return encoded
+
+    def decode(self, encoded_data: str) -> np.ndarray:
+        """
+        Decode a G.711 μ-law base64 string to float32 audio data.
+        Base64 decodes, then converts μ-law bytes to PCM int16, and finally to float32.
+        """
+        # Base64 decode to μ-law bytes
+        ulaw_bytes = base64.b64decode(encoded_data)
+        # Convert μ-law bytes to PCM int16 bytes
+        pcm16_bytes = audioop.ulaw2lin(ulaw_bytes, 2)
+        # Convert bytes to numpy int16 array
+        pcm16 = np.frombuffer(pcm16_bytes, dtype=np.int16)
+        # Convert to float32 and scale to [-1,1]
+        audio_data = pcm16.astype(np.float32) / 32767.0
         return audio_data
 
 

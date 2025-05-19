@@ -12,9 +12,9 @@ import time
 import wave
 from queue import Queue
 from typing import Optional
-
 import websocket
 
+from realtime_voice_chat.schemas.event import InputAudioBufferAppendEvent, BaseEvent
 from realtime_voice_chat.core import AudioHandler
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,10 @@ class OpenAIRealtimeClient:
     """
 
     def __init__(
-        self, audio_handler: AudioHandler | Queue, api_key: Optional[str] = None
+        self,
+        audio_handler: AudioHandler | Queue,
+        openai_model: Optional[str] = "gpt-4o-realtime-preview-2024-12-17",
+        api_key: Optional[str] = None,
     ):
         """
         Initialize the OpenAI client.
@@ -48,7 +51,7 @@ class OpenAIRealtimeClient:
             raise ValueError(
                 "OpenAI API key not provided and OPENAI_API_KEY environment variable not set"
             )
-
+        self.openai_model = openai_model
         self.ws = None
         self.connected = False
         self.audio_handler = audio_handler
@@ -56,9 +59,7 @@ class OpenAIRealtimeClient:
 
     def connect(self) -> None:
         """Connect to OpenAI's WebSocket API."""
-        url = (
-            "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17"
-        )
+        url = f"wss://api.openai.com/v1/realtime?model={self.openai_model}"
         headers = [f"Authorization: Bearer {self.api_key}", "OpenAI-Beta: realtime=v1"]
 
         self.ws = websocket.WebSocketApp(
@@ -71,7 +72,7 @@ class OpenAIRealtimeClient:
         )
 
         # Start WebSocket connection in a separate thread
-        self.ws_thread = threading.Thread( # pylint: disable=W0201
+        self.ws_thread = threading.Thread(  # pylint: disable=W0201
             target=self.ws.run_forever
         )
         self.ws_thread.daemon = True
@@ -82,28 +83,17 @@ class OpenAIRealtimeClient:
         if not self.connected:
             raise ConnectionError("Failed to connect to OpenAI WebSocket API")
 
-    def set_instructions(self, instructions: str) -> None:
+    def send_event(self, event: BaseEvent) -> None:
         """
-        Set the system instructions for the conversation.
+        Emit a event to server.
 
         Args:
-            instructions (str): The system instructions to set.
+            event (BaseEvent): The event object to be sent.
         """
         if not self.connected:
             raise ConnectionError("Not connected to OpenAI WebSocket API")
-
-        self.ws.send(
-            json.dumps(
-                {
-                    "type": "session.update",
-                    "session": {
-                        "instructions": instructions,
-                        "turn_detection": {"type": "server_vad", "threshold": 0.1},
-                    },
-                }
-            )
-        )
-        logger.info("System instructions set")
+        self.ws.send(event.model_dump_json())
+        logger.info(f"{event.__class__.__name__} event sent: {event.model_dump_json()}")
 
     def send_audio(self, audio_data: str) -> None:
         """
@@ -115,9 +105,8 @@ class OpenAIRealtimeClient:
         if not self.connected:
             raise ConnectionError("Not connected to OpenAI WebSocket API")
 
-        self.ws.send(
-            json.dumps({"type": "input_audio_buffer.append", "audio": audio_data})
-        )
+        audio_event = InputAudioBufferAppendEvent(audio=audio_data)
+        self.ws.send(audio_event.model_dump_json())
         logger.debug(f"Sent audio data of length {len(audio_data)}")
 
     def save_audio(self, filename: str = "output.wav") -> None:
