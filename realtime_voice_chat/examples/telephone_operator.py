@@ -6,8 +6,12 @@ import logging
 import time
 
 from realtime_voice_chat.core.audio_handler import SoundDeviceAudioHandler
-from realtime_voice_chat.core.audio_processor import Float32AudioProcessor
+from realtime_voice_chat.core.audio_processor import (
+    G711uLawAudioProcessor,
+)
 from realtime_voice_chat.core.openai_client import OpenAIRealtimeClient
+from realtime_voice_chat.schemas.session import Session
+from realtime_voice_chat.schemas.event import SessionUpdateEvent
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -36,7 +40,9 @@ class TelephoneOperator:
     def __init__(self):
         """Initialize the telephone operator."""
         # Initialize audio handler with float32 processor
-        self.audio_handler = SoundDeviceAudioHandler(processor=Float32AudioProcessor())
+        self.audio_handler = SoundDeviceAudioHandler(
+            processor=G711uLawAudioProcessor(), sample_rate=8000
+        )
 
         # Initialize OpenAI client with float32 processor
         self.openai_client = OpenAIRealtimeClient(audio_handler=self.audio_handler)
@@ -48,7 +54,13 @@ class TelephoneOperator:
             self.openai_client.connect()
 
             # Set system instructions
-            self.openai_client.set_instructions(TELEPHONE_OPERATOR_INSTRUCTION)
+            session = SessionUpdateEvent(
+                session=Session(
+                    instructions=TELEPHONE_OPERATOR_INSTRUCTION,
+                    turn_detection={"type": "server_vad", "threshold": 0.1},
+                )
+            )
+            self.openai_client.send_event(session)
 
             # Start audio streams
             self.audio_handler.start_input_stream()
