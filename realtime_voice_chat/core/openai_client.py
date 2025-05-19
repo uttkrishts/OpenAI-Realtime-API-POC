@@ -1,6 +1,7 @@
 """
 OpenAI WebSocket client for real-time voice chat.
 Handles communication with OpenAI's real-time API.
+Allows complete override of default event handlers via custom callbacks for on_open, on_message, on_error, and on_close events.
 """
 
 import base64
@@ -31,6 +32,12 @@ class OpenAIRealtimeClient:
         ws_thread (Thread): Thread running the WebSocket connection.
         audio_handler (AudioHandler): Handler for processing audio data.
         raw_b64_chunks (List[str]): List of received base64 audio chunks.
+
+    Custom Callbacks:
+        on_open_callback (callable): If provided, overrides the default on_open behavior.
+        on_message_callback (callable): If provided, overrides the default on_message behavior.
+        on_error_callback (callable): If provided, overrides the default on_error behavior.
+        on_close_callback (callable): If provided, overrides the default on_close behavior.
     """
 
     def __init__(
@@ -38,13 +45,22 @@ class OpenAIRealtimeClient:
         audio_handler: AudioHandler | Queue,
         openai_model: Optional[str] = "gpt-4o-realtime-preview-2024-12-17",
         api_key: Optional[str] = None,
+        on_open_callback: Optional[callable] = None,
+        on_message_callback: Optional[callable] = None,
+        on_error_callback: Optional[callable] = None,
+        on_close_callback: Optional[callable] = None,
     ):
         """
         Initialize the OpenAI client.
 
         Args:
-            api_key (str, optional): OpenAI API key. If not provided, will look for OPENAI_API_KEY environment variable.
-            processor_type (str): Type of audio processor to use ('float32' or 'int16')
+            audio_handler (AudioHandler|Queue): Handler for processing audio data.
+            openai_model (str, optional): Model identifier. Default is "gpt-4o-realtime-preview-2024-12-17".
+            api_key (str, optional): OpenAI API key. If not provided, will use the OPENAI_API_KEY environment variable.
+            on_open_callback (callable, optional): Custom callback to override on_open event.
+            on_message_callback (callable, optional): Custom callback to override on_message event.
+            on_error_callback (callable, optional): Custom callback to override on_error event.
+            on_close_callback (callable, optional): Custom callback to override on_close event.
         """
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
@@ -56,6 +72,11 @@ class OpenAIRealtimeClient:
         self.connected = False
         self.audio_handler = audio_handler
         self.raw_b64_chunks = []
+        # Save custom callbacks
+        self._custom_on_open = on_open_callback
+        self._custom_on_message = on_message_callback
+        self._custom_on_error = on_error_callback
+        self._custom_on_close = on_close_callback
 
     def connect(self) -> None:
         """Connect to OpenAI's WebSocket API."""
@@ -147,13 +168,17 @@ class OpenAIRealtimeClient:
             self.connected = False
 
     def _on_open(self, ws) -> None:
-        """WebSocket on_open callback."""
+        if self._custom_on_open:
+            self._custom_on_open(ws)
         logger.info("Connected to OpenAI server")
         self.connected = True
 
     def _on_message(self, ws, message: str) -> None:
-        """WebSocket on_message callback."""
         try:
+            if self._custom_on_message:
+                self._custom_on_message(ws, message)
+                return
+            
             data = json.loads(message)
 
             if data.get("type") == "response.audio.delta":
@@ -184,11 +209,13 @@ class OpenAIRealtimeClient:
             logger.error(f"Error processing message: {e}")
 
     def _on_error(self, ws, error) -> None:
-        """WebSocket on_error callback."""
+        if self._custom_on_error:
+            self._custom_on_error(ws, error)
         logger.error(f"WebSocket error: {error}")
         self.connected = False
 
     def _on_close(self, ws, close_status_code, close_msg) -> None:
-        """WebSocket on_close callback."""
+        if self._custom_on_close:
+            self._custom_on_close(ws, close_status_code, close_msg)
         logger.info(f"WebSocket connection closed: {close_status_code} - {close_msg}")
         self.connected = False
